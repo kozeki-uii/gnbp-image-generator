@@ -1,0 +1,49 @@
+# === Python 垃圾 ===
+__pycache__/
+*.py[cod]
+
+# === PyInstaller 打包产生的垃圾 ===
+build/
+dist/
+images/
+
+# === IDE 配置 (如果你用 VSCode/PyCharm) ===
+.vscode/
+.idea/
+
+# === 敏感信息 ===
+# 包含 API Key 的本地配置绝不能提交。
+GNBP_config.json
+.env
+.env.*
+
+# === 虚拟环境 ===
+venv/
+env/
+
+# === 敏感文件 ===
+api中转.txt
+
+# === 二进制产物 ===
+*.exe
+*.zip
+
+# === 临时/备份 ===
+各版本应用文件备份/
+replay_*.log
+
+# === Claude Code ===
+.claude/
+.agents/
+CLAUDE.md
+skills-lock.json
+
+# === 本地 API 探针（可能包含私有端点或密钥） ===
+/test_gpt_edit.py
+/test_gpt_image.py
+
+# === 本地界面截图 ===
+/ui截图.jpg
+
+# === 文档副本 ===
+openai文档/
