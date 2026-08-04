@@ -14,6 +14,7 @@ from app_info import APP_TITLE
 
 
 DESKTOP_PORT = 47831
+DEFAULT_ZOOM = 1.25
 
 
 def get_resource_path(relative_path):
@@ -96,7 +97,7 @@ class WebMainWindow(QMainWindow):
         self.web_view = QWebEngineView(self)
         self.web_view.setPage(DesktopWebPage(profile, self.web_view))
         self.desktop_settings = QSettings("GNBP", "ImageGenerator")
-        saved_zoom = self.desktop_settings.value("web_zoom", 1.10, type=float)
+        saved_zoom = self.desktop_settings.value("web_zoom", DEFAULT_ZOOM, type=float)
         self.web_view.setZoomFactor(max(0.75, min(1.50, saved_zoom)))
         self.web_view.loadFinished.connect(self._on_load_finished)
         self.setCentralWidget(self.web_view)
@@ -112,8 +113,8 @@ class WebMainWindow(QMainWindow):
         self.desktop_settings.setValue("web_zoom", zoom)
 
     def _reset_zoom(self):
-        self.web_view.setZoomFactor(1.10)
-        self.desktop_settings.setValue("web_zoom", 1.10)
+        self.web_view.setZoomFactor(DEFAULT_ZOOM)
+        self.desktop_settings.setValue("web_zoom", DEFAULT_ZOOM)
 
     def _on_load_finished(self, success):
         if not success:

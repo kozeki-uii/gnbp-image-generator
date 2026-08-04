@@ -13,10 +13,14 @@ model, API quota, API key, or third-party service endorsement.
 - Custom API URL, API key, model, and multiple saved profiles
 - Image generation, editing, multiple reference images, mask editor, and batch generation
 - Local IndexedDB/localStorage persistence for settings, history, images, and collections
-- 110% default UI scale with `Ctrl++`, `Ctrl+-`, and `Ctrl+0`; the selected scale is remembered
+- 125% default UI scale with `Ctrl++`, `Ctrl+-`, and `Ctrl+0`; the selected scale is remembered
 - Optional Agent mode when the provider supports Responses API text reasoning and the `image_generation` tool
 
 ## Run Locally
+
+On Windows, the simplest entry point is to double-click `启动 GNBP.cmd` in the
+project folder. It creates `.venv` and installs the required packages on first
+run, then opens the application without a terminal window on later runs.
 
 Create the local environment once:
 
