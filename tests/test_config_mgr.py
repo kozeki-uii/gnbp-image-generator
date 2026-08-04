@@ -24,6 +24,7 @@ class ConfigManagerTests(unittest.TestCase):
             self.assertFalse(settings["show_preview"])
             self.assertEqual(settings["batch_count"], 1)
             self.assertEqual(settings["max_workers"], 1)
+            self.assertEqual(settings["history_limit"], 60)
             self.assertTrue(settings["sound_notify"])
             self.assertEqual(settings["theme"], "米黄")
 
@@ -46,6 +47,18 @@ class ConfigManagerTests(unittest.TestCase):
             ConfigManager(path).set_current_profile_idx(1)
 
             self.assertEqual(ConfigManager(path).data["current_profile_idx"], 1)
+
+    def test_old_profiles_default_to_images_api_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "config.json")
+            data = copy.deepcopy(DEFAULT_CONFIG)
+            data["profiles"][0].pop("api_mode", None)
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(data, handle)
+
+            profile = ConfigManager(path).get_current_profile()
+
+            self.assertEqual(profile["api_mode"], "images")
 
 
 if __name__ == "__main__":

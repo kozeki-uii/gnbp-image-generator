@@ -1,11 +1,19 @@
 import sys
 import os
+
+# The desktop shell only renders bundled local content. Disabling Chromium's
+# same-origin checks lets that trusted UI call user-configured API endpoints
+# directly, matching a native desktop client's networking behavior.
+os.environ.setdefault(
+    "QTWEBENGINE_CHROMIUM_FLAGS",
+    "--disable-web-security --disable-features=BlockInsecurePrivateNetworkRequests",
+)
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt
 from app_info import APP_NAME, APP_VERSION
-from ui.main_window import MainWindow
-from ui.themes import get_qss
+from ui.web_window import WebMainWindow
 
 
 def get_resource_path(relative_path):
@@ -25,16 +33,11 @@ def main():
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
 
-    from config.config_mgr import ConfigManager, CONFIG_FILE
-    cfg = ConfigManager(CONFIG_FILE)
-    saved_theme = cfg.get_settings().get("theme", "米黄")
-    app.setStyleSheet(get_qss(saved_theme))
-
     icon_path = get_resource_path("app_icon.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
-    window = MainWindow()
+    window = WebMainWindow()
     window.show()
 
     sys.exit(app.exec())

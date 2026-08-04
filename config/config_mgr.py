@@ -17,6 +17,7 @@ DEFAULT_CONFIG = {
         {
             "name": "Configure API",
             "api_type": "gemini",
+            "api_mode": "images",
             "api_url": "https://generativelanguage.googleapis.com",
             "api_key": "",
             "model": ""
@@ -39,6 +40,10 @@ DEFAULT_CONFIG = {
         "show_preview": True,
         "batch_count": 1,
         "max_workers": 1,
+        "history_limit": 60,
+        "output_format_idx": 0,
+        "moderation_idx": 0,
+        "output_compression": 0,
         "sound_notify": True
     }
 }
@@ -53,10 +58,16 @@ class GenConfig:
     resolution: str
     output_dir: str
     api_type: str = "gemini"
+    api_mode: str = "images"
     ref_images: List[str] = field(default_factory=list)
+    mask_image: Optional[str] = None
     temperature: float = 0.9
     size: str = "1024x1024"
     quality: str = "auto"
+    output_format: str = "png"
+    output_compression: Optional[int] = None
+    moderation: str = "auto"
+    n: int = 1
 
 @dataclass
 class TaskData:
@@ -94,6 +105,13 @@ class ConfigManager:
                 merged["settings"] = copy.deepcopy(DEFAULT_CONFIG["settings"])
                 if isinstance(data.get("settings"), dict):
                     merged["settings"].update(data["settings"])
+                for profile in merged.get("profiles", []):
+                    if isinstance(profile, dict):
+                        profile["api_mode"] = (
+                            profile.get("api_mode")
+                            if profile.get("api_mode") in {"images", "responses"}
+                            else "images"
+                        )
                 return merged
         except Exception as e:
             print(f"❌ Config Load Error: {e}")
@@ -124,15 +142,28 @@ class ConfigManager:
         self.data["current_profile_idx"] = idx
         self.save_data()
 
-    def add_profile(self, name, api_type, url, key, model):
+    def add_profile(self, name, api_type, url, key, model, api_mode="images"):
         if "profiles" not in self.data: self.data["profiles"] = []
-        self.data["profiles"].append({"name": name, "api_type": api_type, "api_url": url, "api_key": key, "model": model})
+        self.data["profiles"].append({
+            "name": name,
+            "api_type": api_type,
+            "api_mode": api_mode if api_mode in {"images", "responses"} else "images",
+            "api_url": url,
+            "api_key": key,
+            "model": model,
+        })
         self.data["current_profile_idx"] = len(self.data["profiles"]) - 1
         self.save_data()
 
-    def update_profile(self, idx, api_type, url, key, model):
+    def update_profile(self, idx, api_type, url, key, model, api_mode="images"):
         if "profiles" in self.data and 0 <= idx < len(self.data["profiles"]):
-            self.data["profiles"][idx].update({"api_type": api_type, "api_url": url, "api_key": key, "model": model})
+            self.data["profiles"][idx].update({
+                "api_type": api_type,
+                "api_mode": api_mode if api_mode in {"images", "responses"} else "images",
+                "api_url": url,
+                "api_key": key,
+                "model": model,
+            })
             self.save_data()
 
     def delete_profile(self, idx):
@@ -164,7 +195,17 @@ class ConfigManager:
             self.save_data()
 
     # --- Settings Ops ---
-    def update_settings(self, ratio_idx, res_idx, output_dir, gpt_size_idx=None, gpt_quality_idx=None):
+    def update_settings(
+        self,
+        ratio_idx,
+        res_idx,
+        output_dir,
+        gpt_size_idx=None,
+        gpt_quality_idx=None,
+        output_format_idx=None,
+        moderation_idx=None,
+        output_compression=None,
+    ):
         if "settings" not in self.data: self.data["settings"] = {}
         self.data["settings"].update(
             {"aspect_ratio_idx": ratio_idx, "resolution_idx": res_idx, "output_dir": output_dir})
@@ -172,6 +213,12 @@ class ConfigManager:
             self.data["settings"]["gpt_size_idx"] = gpt_size_idx
         if gpt_quality_idx is not None:
             self.data["settings"]["gpt_quality_idx"] = gpt_quality_idx
+        if output_format_idx is not None:
+            self.data["settings"]["output_format_idx"] = output_format_idx
+        if moderation_idx is not None:
+            self.data["settings"]["moderation_idx"] = moderation_idx
+        if output_compression is not None:
+            self.data["settings"]["output_compression"] = output_compression
         self.save_data()
 
     def get_settings(self):

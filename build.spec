@@ -3,10 +3,18 @@ from app_info import APP_EXECUTABLE_NAME
 
 datas = [
     ('app_icon.ico', '.'),
+    ('web_dist', 'web_dist'),
 ]
 
 binaries = []
-hiddenimports = ['PySide6.QtWidgets', 'PySide6.QtCore', 'PySide6.QtGui']
+hiddenimports = [
+    'PySide6.QtWidgets',
+    'PySide6.QtCore',
+    'PySide6.QtGui',
+    'PySide6.QtNetwork',
+    'PySide6.QtWebEngineCore',
+    'PySide6.QtWebEngineWidgets',
+]
 
 
 a = Analysis(
@@ -27,9 +35,8 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name=APP_EXECUTABLE_NAME,
     icon='app_icon.ico', # 这是文件资源管理器的图标
     debug=False,
@@ -44,4 +51,13 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name=f'{APP_EXECUTABLE_NAME}-Portable',
 )

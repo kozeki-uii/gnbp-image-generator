@@ -4,17 +4,14 @@ import requests
 import time
 import os
 import json
-import urllib3
 from dataclasses import asdict
 from config.config_mgr import GenConfig
 from core.utils import ImageUtils
 
-# 屏蔽 SSL 警告
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 class GeminiApiClient:
-    def __init__(self, log_callback):
+    def __init__(self, log_callback, verify_ssl=True):
         self.log = log_callback
+        self.verify_ssl = verify_ssl
 
     def generate(self, config: GenConfig):
         try:
@@ -54,13 +51,16 @@ class GeminiApiClient:
             # 发送请求
             response = requests.post(
                 full_url, json=payload, headers={"Content-Type": "application/json"},
-                timeout=400, verify=False, proxies={"http": None, "https": None}
+                timeout=400, verify=self.verify_ssl
             )
 
             duration = time.time() - start_t
 
-            if response.status_code != 200:
-                return False, f"HTTP {response.status_code}: {response.text[:200]}..."
+            if not response.ok:
+                text = response.text.strip()
+                if len(text) > 500:
+                    text = f"{text[:500]}..."
+                return False, f"HTTP {response.status_code}: {text}"
 
             result = response.json()
             candidates = result.get('candidates', [])

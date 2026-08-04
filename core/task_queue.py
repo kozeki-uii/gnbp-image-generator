@@ -57,7 +57,11 @@ class TaskManager(QObject):
     def add_task(self, config: GenConfig):
         task_id = uuid.uuid4().hex[:6]
         if config.api_type == "gpt":
-            params_short = f"{config.size} | {config.quality}"
+            count_suffix = f" x{config.n}" if config.n > 1 else ""
+            params_short = (
+                f"{config.api_mode} | {config.size} | {config.quality} | "
+                f"{config.output_format}{count_suffix}"
+            )
         else:
             params_short = f"{config.aspect_ratio} | {config.resolution}"
         task_data = {
@@ -115,9 +119,13 @@ class TaskManager(QObject):
                 duration_str = f"{duration:.1f}s"
 
                 if success:
+                    paths = result if isinstance(result, list) else [result]
+                    paths = [path for path in paths if isinstance(path, str) and path]
                     self.task_updated.emit({
                         "id": tid, "status": "Success",
-                        "path": result, "duration_str": duration_str
+                        "path": paths[0] if paths else None,
+                        "paths": paths,
+                        "duration_str": duration_str
                     })
                 else:
                     self.task_updated.emit({
@@ -127,7 +135,12 @@ class TaskManager(QObject):
                     self._log(f"❌ 任务 {tid} 失败: {result}")
             except Exception as e:
                 duration_str = f"{time.time() - start_t:.1f}s"
-                self.task_updated.emit({"id": tid, "status": "Error", "duration_str": duration_str})
+                self.task_updated.emit({
+                    "id": tid,
+                    "status": "Error",
+                    "error_msg": str(e),
+                    "duration_str": duration_str,
+                })
                 self._log(f"💥 严重错误: {e}")
 
             self.queue.task_done()

@@ -20,6 +20,7 @@ GNBP_config.json
 # === 虚拟环境 ===
 venv/
 env/
+.venv/
 
 # === 敏感文件 ===
 api中转.txt
@@ -27,6 +28,7 @@ api中转.txt
 # === 二进制产物 ===
 *.exe
 *.zip
+*.lnk
 
 # === 临时/备份 ===
 各版本应用文件备份/
