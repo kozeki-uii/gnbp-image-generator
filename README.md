@@ -107,8 +107,9 @@ Agent 模式不是普通生图所必需的。它要求服务端同时支持：
 ## 前端更新
 
 仓库中的 `web_dist` 是已经构建好的前端文件，当前基于 GPT Image Playground
-`v0.7.3`。更新上游前端时，应先在上游仓库运行测试和构建，再用新的 `dist` 替换
-`web_dist`，并保留上游 MIT 许可证。
+`v0.7.3`。桌面性能改动保存在 `frontend-patches/desktop-performance.patch`。
+更新上游前端时，应使用 `git apply --unidiff-zero` 应用该补丁（或手动迁移改动），
+再运行测试和构建，最后用新的 `dist` 替换 `web_dist` 并保留上游 MIT 许可证。
 
 ## 项目结构
 

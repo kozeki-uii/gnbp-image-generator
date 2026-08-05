@@ -25,10 +25,17 @@ build. The project does not produce a Windows installer.
 
 ## Frontend Updates
 
-Build the local upstream checkout with `npm run build`, replace `web_dist` with
-the resulting `dist` directory, and retain the upstream MIT license as
-`web_dist/LICENSE-CookSleep.txt`. Run the upstream frontend tests before
-updating the bundled files.
+Start from the CookSleep v0.7.3 checkout, apply
+`frontend-patches/desktop-performance.patch` with `git apply --unidiff-zero`,
+then run `npm test -- --run` and `npm run build`. Replace `web_dist` with the
+resulting `dist` directory and retain the upstream MIT license as
+`web_dist/LICENSE-CookSleep.txt`.
+
+The desktop patch keeps the upstream visual structure while code-splitting
+secondary tools, disabling Service Worker ownership inside QtWebEngine, and
+reducing only the full-screen blur and scale animations that trigger expensive
+page recomposition. Small translucent controls, shadows, and short modal motion
+remain enabled.
 
 ## Versioning
 

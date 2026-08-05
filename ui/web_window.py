@@ -5,8 +5,8 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 from PySide6.QtCore import QSettings, QStandardPaths, QUrl
-from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+from PySide6.QtGui import QColor, QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineScript
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox
 
@@ -23,11 +23,16 @@ def get_resource_path(relative_path):
 
 
 class QuietStaticHandler(SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, _format, *_args):
         return
 
     def end_headers(self):
-        self.send_header("Cache-Control", "no-cache")
+        if self.path.startswith("/assets/"):
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
 
@@ -90,12 +95,27 @@ class WebMainWindow(QMainWindow):
         profile = QWebEngineProfile("GNBPDesktop", self)
         profile.setPersistentStoragePath(os.path.join(app_data, "web-storage"))
         profile.setCachePath(os.path.join(app_data, "web-cache"))
+        profile.setHttpCacheType(QWebEngineProfile.DiskHttpCache)
+        profile.setHttpCacheMaximumSize(128 * 1024 * 1024)
         profile.setPersistentCookiesPolicy(QWebEngineProfile.AllowPersistentCookies)
         profile.downloadRequested.connect(self._handle_download)
+
+        desktop_runtime = QWebEngineScript()
+        desktop_runtime.setName("GNBP desktop runtime")
+        desktop_runtime.setInjectionPoint(QWebEngineScript.DocumentCreation)
+        desktop_runtime.setWorldId(QWebEngineScript.MainWorld)
+        desktop_runtime.setRunsOnSubFrames(False)
+        desktop_runtime.setSourceCode(
+            "window.__GNBP_DESKTOP__ = true;"
+            "document.documentElement.dataset.gnbpDesktop = 'true';"
+        )
+        profile.scripts().insert(desktop_runtime)
         self.web_profile = profile
 
         self.web_view = QWebEngineView(self)
-        self.web_view.setPage(DesktopWebPage(profile, self.web_view))
+        page = DesktopWebPage(profile, self.web_view)
+        page.setBackgroundColor(QColor("#111827"))
+        self.web_view.setPage(page)
         self.desktop_settings = QSettings("GNBP", "ImageGenerator")
         saved_zoom = self.desktop_settings.value("web_zoom", DEFAULT_ZOOM, type=float)
         self.web_view.setZoomFactor(max(0.75, min(1.50, saved_zoom)))
