@@ -6,11 +6,11 @@ import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QMimeDatabase, QSettings, QStandardPaths, QUrl
+from PySide6.QtCore import QByteArray, QBuffer, QEvent, QIODevice, QMimeDatabase, QSettings, QStandardPaths, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QImage, QKeySequence, QShortcut
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QWidget
 
 from app_info import APP_TITLE
 
@@ -137,6 +137,46 @@ class DesktopWebView(QWebEngineView):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self._desktop_drag_active = False
+        self.installEventFilter(self)
+        self.loadFinished.connect(lambda _success: QTimer.singleShot(0, self._enable_desktop_drops))
+
+    def _enable_desktop_drops(self):
+        self.setAcceptDrops(True)
+        for child in self.findChildren(QWidget):
+            child.setAcceptDrops(True)
+            child.installEventFilter(self)
+
+    def _owns_event_target(self, watched):
+        return watched is self or (isinstance(watched, QWidget) and self.isAncestorOf(watched))
+
+    def eventFilter(self, watched, event):
+        if not self._owns_event_target(watched):
+            return super().eventFilter(watched, event)
+
+        event_type = event.type()
+        if event_type == QEvent.Type.DragEnter and mime_data_has_images(event.mimeData()):
+            self._desktop_drag_active = True
+            self._set_drag_active(True)
+            event.acceptProposedAction()
+            return True
+        if event_type == QEvent.Type.DragMove and self._desktop_drag_active:
+            event.acceptProposedAction()
+            return True
+        if event_type == QEvent.Type.DragLeave and self._desktop_drag_active:
+            self._desktop_drag_active = False
+            self._set_drag_active(False)
+            event.accept()
+            return True
+        if event_type == QEvent.Type.Drop:
+            self._desktop_drag_active = False
+            self._set_drag_active(False)
+            data_urls = mime_data_to_image_data_urls(event.mimeData())
+            if data_urls:
+                self._dispatch_desktop_event(DESKTOP_IMAGES_EVENT, data_urls)
+                event.acceptProposedAction()
+                return True
+
+        return super().eventFilter(watched, event)
 
     def _dispatch_desktop_event(self, event_name, detail):
         script = (

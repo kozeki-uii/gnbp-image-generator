@@ -7,11 +7,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QMimeData, QUrl
 from PySide6.QtGui import QColor, QImage
+from PySide6.QtWidgets import QApplication, QWidget
 
-from ui.web_window import mime_data_has_images, mime_data_to_image_data_urls
+from ui.web_window import DesktopWebView, mime_data_has_images, mime_data_to_image_data_urls
 
 
 class DesktopImageTransferTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
     def test_clipboard_bitmap_becomes_png_data_url(self):
         image = QImage(3, 2, QImage.Format.Format_ARGB32)
         image.fill(QColor("#336699"))
@@ -51,6 +56,16 @@ class DesktopImageTransferTests(unittest.TestCase):
 
             self.assertFalse(mime_data_has_images(mime_data))
             self.assertEqual(mime_data_to_image_data_urls(mime_data), [])
+
+    def test_web_view_recognizes_its_internal_children_as_drop_targets(self):
+        view = DesktopWebView()
+        child = QWidget(view)
+
+        self.assertTrue(view._owns_event_target(view))
+        self.assertTrue(view._owns_event_target(child))
+        self.assertFalse(view._owns_event_target(QWidget()))
+
+        view.deleteLater()
 
 
 if __name__ == "__main__":

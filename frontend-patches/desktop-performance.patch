@@ -91,16 +91,28 @@ index 5fc1614..8763e7b 100644
 @@ -132 +184,0 @@ export default function App() {
 -      <MaskEditorModal />
 diff --git a/src/components/InputBar.tsx b/src/components/InputBar.tsx
-index b0ba6de..0ae4c4a 100644
+index b0ba6de..7ba7cf9 100644
 --- a/src/components/InputBar.tsx
 +++ b/src/components/InputBar.tsx
 @@ -11 +11 @@ import { normalizeCodexCliImageSize, normalizeImageSize } from '../lib/size'
 -import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 +import { createMaskPreviewDataUrl, dataUrlToBlob } from '../lib/canvasImage'
-@@ -26,0 +27,2 @@ const API_MAX_IMAGES = 16
+@@ -14,0 +15 @@ import { ALL_FAVORITES_COLLECTION_ID, getTaskFavoriteCollectionIds } from '../li
++import { normalizeImageFile } from '../lib/dataUrl'
+@@ -26,0 +28,2 @@ const API_MAX_IMAGES = 16
 +const DESKTOP_IMAGES_EVENT = 'gnbp-desktop-images'
 +const DESKTOP_DRAG_STATE_EVENT = 'gnbp-desktop-drag-state'
-@@ -833,0 +836,33 @@ export default function InputBar() {
+@@ -809 +812,8 @@ export default function InputBar() {
+-      const accepted = Array.from(files).filter((f) => f.type.startsWith('image/'))
++      const selected = Array.from(files)
++      const accepted = selected
++        .map(normalizeImageFile)
++        .filter((file): file is File => file !== null)
++      if (selected.length > 0 && accepted.length === 0) {
++        useStore.getState().showToast('未识别到支持的图片格式，请选择 PNG、JPEG、WebP 或 GIF', 'error')
++        return
++      }
+@@ -833,0 +844,33 @@ export default function InputBar() {
 +  useEffect(() => {
 +    const handleDesktopImages = (event: Event) => {
 +      const dataUrls = (event as CustomEvent<unknown>).detail
@@ -134,7 +146,7 @@ index b0ba6de..0ae4c4a 100644
 +    }
 +  }, [])
 +
-@@ -1594 +1629 @@ export default function InputBar() {
+@@ -1594 +1637 @@ export default function InputBar() {
 -        <div ref={cardRef} className={`bg-white/70 dark:bg-gray-900/70 backdrop-blur-2xl border border-white/50 dark:border-white/[0.08] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-2xl sm:rounded-3xl p-3 sm:p-4 ring-1 ring-black/5 dark:ring-white/10${promptExpanded ? ' flex min-h-0 flex-1 flex-col' : ''}`}>
 +        <div ref={cardRef} data-input-card className={`bg-white/70 dark:bg-gray-900/70 backdrop-blur-2xl border border-white/50 dark:border-white/[0.08] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-2xl sm:rounded-3xl p-3 sm:p-4 ring-1 ring-black/5 dark:ring-white/10${promptExpanded ? ' flex min-h-0 flex-1 flex-col' : ''}`}>
 diff --git a/src/components/MarkdownRenderer.tsx b/src/components/MarkdownRenderer.tsx
@@ -229,6 +241,51 @@ index b6499f0..4381026 100644
 +    timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout)
 +      ? DESKTOP_SHELL && record.timeout === LEGACY_DESKTOP_API_TIMEOUT ? DEFAULT_API_TIMEOUT : record.timeout
 +      : DEFAULT_API_TIMEOUT,
+diff --git a/src/lib/dataUrl.test.ts b/src/lib/dataUrl.test.ts
+index 4b9aa59..c0e0e2f 100644
+--- a/src/lib/dataUrl.test.ts
++++ b/src/lib/dataUrl.test.ts
+@@ -2 +2 @@ import { describe, expect, it } from 'vitest'
+-import { blobToDataUrl, bytesToDataUrl, dataUrlToBytes } from './dataUrl'
++import { blobToDataUrl, bytesToDataUrl, dataUrlToBytes, getImageFileMime, normalizeImageFile } from './dataUrl'
+@@ -18,0 +19,14 @@ describe('dataUrl helpers', () => {
++
++  it('recognizes a local image with an empty MIME type by its extension', () => {
++    const file = new File([new Uint8Array([1, 2, 3])], 'reference.PNG')
++
++    expect(getImageFileMime(file)).toBe('image/png')
++    expect(normalizeImageFile(file)?.type).toBe('image/png')
++  })
++
++  it('rejects a file that is not a supported image', () => {
++    const file = new File(['not an image'], 'notes.txt')
++
++    expect(getImageFileMime(file)).toBeNull()
++    expect(normalizeImageFile(file)).toBeNull()
++  })
+diff --git a/src/lib/dataUrl.ts b/src/lib/dataUrl.ts
+index 21d5610..b0f602e 100644
+--- a/src/lib/dataUrl.ts
++++ b/src/lib/dataUrl.ts
+@@ -8,0 +9,15 @@ const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
++export function getImageFileMime(file: Pick<File, 'name' | 'type'>): string | null {
++  const declaredMime = file.type.trim().toLowerCase().split(';', 1)[0]
++  if (declaredMime.startsWith('image/')) return declaredMime
++
++  const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
++  return IMAGE_MIME_BY_EXTENSION[extension] ?? null
++}
++
++export function normalizeImageFile(file: File): File | null {
++  const mime = getImageFileMime(file)
++  if (!mime) return null
++  if (file.type === mime) return file
++  return new File([file], file.name, { type: mime, lastModified: file.lastModified })
++}
++
+@@ -37 +52 @@ export function fileToDataUrl(file: File): Promise<string> {
+-  return blobToDataUrl(file, file.type || 'application/octet-stream')
++  return blobToDataUrl(file, getImageFileMime(file) || 'application/octet-stream')
 diff --git a/src/main.tsx b/src/main.tsx
 index 43e065c..ac6c5ff 100644
 --- a/src/main.tsx
@@ -262,3 +319,16 @@ index 43e065c..ac6c5ff 100644
 +        keys.filter((key) => key.startsWith('gpt-image-playground-')).forEach((key) => window.caches.delete(key))
 +      })
 +    }
+diff --git a/src/store.ts b/src/store.ts
+index 872a4db..ec831fb 100644
+--- a/src/store.ts
++++ b/src/store.ts
+@@ -58 +58 @@ import { createTransparentOutputMeta, getTransparentRequestParams, removeKeyedBa
+-import { blobToDataUrl, fileToDataUrl } from './lib/dataUrl'
++import { blobToDataUrl, fileToDataUrl, normalizeImageFile } from './lib/dataUrl'
+@@ -4446,2 +4446,3 @@ export async function createInputImageFromFile(file: File): Promise<InputImage |
+-  if (!file.type.startsWith('image/')) return null
+-  const dataUrl = await fileToDataUrl(file)
++  const imageFile = normalizeImageFile(file)
++  if (!imageFile) return null
++  const dataUrl = await fileToDataUrl(imageFile)
