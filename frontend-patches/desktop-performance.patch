@@ -1,5 +1,5 @@
 diff --git a/src/App.tsx b/src/App.tsx
-index 5fc1614..4392dae 100644
+index 5fc1614..8763e7b 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
 @@ -1 +1 @@
@@ -35,24 +35,48 @@ index 5fc1614..4392dae 100644
 +  const showSettings = useStore((s) => s.showSettings)
 +  const confirmDialog = useStore((s) => s.confirmDialog)
 +  const maskEditorImageId = useStore((s) => s.maskEditorImageId)
-@@ -34,0 +48,11 @@ export default function App() {
+@@ -34,0 +48,35 @@ export default function App() {
 +  useEffect(() => {
-+    const timeout = window.setTimeout(() => {
-+      void loadDetailModal()
-+      void loadLightbox()
-+      void loadSettingsModal()
-+      void loadConfirmDialog()
-+      void loadMaskEditorModal()
-+    }, 1200)
-+    return () => window.clearTimeout(timeout)
++    const preloaders = [loadSettingsModal, loadLightbox, loadDetailModal, loadConfirmDialog, loadMaskEditorModal]
++    const idleScheduler = window as unknown as {
++      requestIdleCallback?: typeof window.requestIdleCallback
++      cancelIdleCallback?: typeof window.cancelIdleCallback
++    }
++    let nextIndex = 0
++    let timeoutId: number | null = null
++    let idleId: number | null = null
++    let cancelled = false
++
++    const preloadNext = () => {
++      if (cancelled || nextIndex >= preloaders.length) return
++      const loader = preloaders[nextIndex++]
++      void loader().catch(() => undefined).finally(scheduleNext)
++    }
++    const scheduleNext = () => {
++      if (cancelled || nextIndex >= preloaders.length) return
++      if (typeof idleScheduler.requestIdleCallback === 'function') {
++        idleId = idleScheduler.requestIdleCallback(preloadNext, { timeout: 2000 })
++      } else {
++        timeoutId = globalThis.setTimeout(preloadNext, 600)
++      }
++    }
++
++    scheduleNext()
++    return () => {
++      cancelled = true
++      if (timeoutId !== null) window.clearTimeout(timeoutId)
++      if (idleId !== null && typeof idleScheduler.cancelIdleCallback === 'function') {
++        idleScheduler.cancelIdleCallback(idleId)
++      }
++    }
 +  }, [])
 +
-@@ -114 +138,3 @@ export default function App() {
+@@ -114 +162,3 @@ export default function App() {
 -        <AgentWorkspace />
 +        <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><div className="h-7 w-7 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500 dark:border-gray-700 dark:border-t-blue-400" /></div>}>
 +          <AgentWorkspace />
 +        </Suspense>
-@@ -124,4 +150,7 @@ export default function App() {
+@@ -124,4 +174,7 @@ export default function App() {
 -      <DetailModal />
 -      <Lightbox />
 -      <SettingsModal />
@@ -64,8 +88,55 @@ index 5fc1614..4392dae 100644
 +        {confirmDialog && <ConfirmDialog />}
 +        {maskEditorImageId && <MaskEditorModal />}
 +      </Suspense>
-@@ -132 +160,0 @@ export default function App() {
+@@ -132 +184,0 @@ export default function App() {
 -      <MaskEditorModal />
+diff --git a/src/components/InputBar.tsx b/src/components/InputBar.tsx
+index b0ba6de..0ae4c4a 100644
+--- a/src/components/InputBar.tsx
++++ b/src/components/InputBar.tsx
+@@ -11 +11 @@ import { normalizeCodexCliImageSize, normalizeImageSize } from '../lib/size'
+-import { createMaskPreviewDataUrl } from '../lib/canvasImage'
++import { createMaskPreviewDataUrl, dataUrlToBlob } from '../lib/canvasImage'
+@@ -26,0 +27,2 @@ const API_MAX_IMAGES = 16
++const DESKTOP_IMAGES_EVENT = 'gnbp-desktop-images'
++const DESKTOP_DRAG_STATE_EVENT = 'gnbp-desktop-drag-state'
+@@ -833,0 +836,33 @@ export default function InputBar() {
++  useEffect(() => {
++    const handleDesktopImages = (event: Event) => {
++      const dataUrls = (event as CustomEvent<unknown>).detail
++      if (!Array.isArray(dataUrls) || !dataUrls.every((value) => typeof value === 'string')) return
++
++      void Promise.all(dataUrls.map(async (dataUrl, index) => {
++        const blob = await dataUrlToBlob(dataUrl)
++        const subtype = blob.type.split('/')[1]?.replace('jpeg', 'jpg').replace(/[^a-z0-9.+-]/gi, '') || 'png'
++        return new File([blob], `desktop-image-${Date.now()}-${index + 1}.${subtype}`, {
++          type: blob.type || 'image/png',
++        })
++      })).then((files) => handleFilesRef.current(files)).catch((error) => {
++        useStore.getState().showToast(
++          `图片添加失败：${error instanceof Error ? error.message : String(error)}`,
++          'error',
++        )
++      })
++    }
++
++    const handleDesktopDragState = (event: Event) => {
++      const active = (event as CustomEvent<unknown>).detail === true
++      dragCounter.current = active ? 1 : 0
++      setIsDragging(active)
++    }
++
++    window.addEventListener(DESKTOP_IMAGES_EVENT, handleDesktopImages)
++    window.addEventListener(DESKTOP_DRAG_STATE_EVENT, handleDesktopDragState)
++    return () => {
++      window.removeEventListener(DESKTOP_IMAGES_EVENT, handleDesktopImages)
++      window.removeEventListener(DESKTOP_DRAG_STATE_EVENT, handleDesktopDragState)
++    }
++  }, [])
++
+@@ -1594 +1629 @@ export default function InputBar() {
+-        <div ref={cardRef} className={`bg-white/70 dark:bg-gray-900/70 backdrop-blur-2xl border border-white/50 dark:border-white/[0.08] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-2xl sm:rounded-3xl p-3 sm:p-4 ring-1 ring-black/5 dark:ring-white/10${promptExpanded ? ' flex min-h-0 flex-1 flex-col' : ''}`}>
++        <div ref={cardRef} data-input-card className={`bg-white/70 dark:bg-gray-900/70 backdrop-blur-2xl border border-white/50 dark:border-white/[0.08] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-2xl sm:rounded-3xl p-3 sm:p-4 ring-1 ring-black/5 dark:ring-white/10${promptExpanded ? ' flex min-h-0 flex-1 flex-col' : ''}`}>
 diff --git a/src/components/MarkdownRenderer.tsx b/src/components/MarkdownRenderer.tsx
 index ff5432a..208ac8c 100644
 --- a/src/components/MarkdownRenderer.tsx
@@ -73,19 +144,38 @@ index ff5432a..208ac8c 100644
 @@ -3,0 +4,2 @@ import type { Components as ReactMarkdownComponents } from 'react-markdown'
 +import 'streamdown/styles.css'
 +import 'katex/dist/katex.min.css'
+diff --git a/src/components/SettingsModal.tsx b/src/components/SettingsModal.tsx
+index 177581d..38fd268 100644
+--- a/src/components/SettingsModal.tsx
++++ b/src/components/SettingsModal.tsx
+@@ -1651 +1651 @@ export default function SettingsModal() {
+-                    max={600}
++                    max={3600}
 diff --git a/src/index.css b/src/index.css
-index 1c2cc04..5017e9d 100644
+index 1c2cc04..6587765 100644
 --- a/src/index.css
 +++ b/src/index.css
 @@ -1,3 +0,0 @@
 -@import url('https://fontsapi.zeoseven.com/442/main/result.css');
 -@import url('https://cdn.jsdelivr.net/npm/@lobehub/webfont-harmony-sans-sc@1.0.0/css/index.css');
 -
-@@ -339,0 +337,36 @@ input[type="number"] {
+@@ -339,0 +337,49 @@ input[type="number"] {
 +/* 桌面壳保留弹窗质感，但避免全屏实时模糊触发整页重合成。 */
++html[data-gnbp-desktop='true'] .fixed.inset-0[class*='backdrop-blur'],
 +html[data-gnbp-desktop='true'] .fixed.inset-0 > .absolute.inset-0[class*='backdrop-blur'] {
 +  -webkit-backdrop-filter: none !important;
 +  backdrop-filter: none !important;
++}
++
++html[data-gnbp-desktop='true'] [data-input-bar] {
++  transition-property: top, transform, opacity;
++}
++
++html[data-gnbp-desktop='true'] [data-input-card] {
++  -webkit-backdrop-filter: blur(10px) !important;
++  backdrop-filter: blur(10px) !important;
++  backface-visibility: hidden;
++  transform: translateZ(0);
 +}
 +
 +@keyframes desktop-overlay-in {
@@ -94,8 +184,8 @@ index 1c2cc04..5017e9d 100644
 +}
 +
 +@keyframes desktop-modal-in {
-+  from { opacity: 0; transform: translateY(6px); }
-+  to { opacity: 1; transform: translateY(0); }
++  from { opacity: 0; transform: translate3d(0, 6px, 0); }
++  to { opacity: 1; transform: translate3d(0, 0, 0); }
 +}
 +
 +@keyframes desktop-zoom-in {
@@ -112,12 +202,33 @@ index 1c2cc04..5017e9d 100644
 +html[data-gnbp-desktop='true'] .animate-slide-down-in,
 +html[data-gnbp-desktop='true'] .animate-confirm-in {
 +  animation: desktop-modal-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
++  backface-visibility: hidden;
 +}
 +
 +html[data-gnbp-desktop='true'] .animate-zoom-in {
 +  animation: desktop-zoom-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
 +}
 +
+diff --git a/src/lib/apiProfiles.ts b/src/lib/apiProfiles.ts
+index b6499f0..4381026 100644
+--- a/src/lib/apiProfiles.ts
++++ b/src/lib/apiProfiles.ts
+@@ -36 +36,4 @@ export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
+-export const DEFAULT_API_TIMEOUT = 600
++const LEGACY_DESKTOP_API_TIMEOUT = 600
++const DESKTOP_SHELL = typeof window !== 'undefined'
++  && Boolean((window as typeof window & { __GNBP_DESKTOP__?: boolean }).__GNBP_DESKTOP__)
++export const DEFAULT_API_TIMEOUT = DESKTOP_SHELL ? 1800 : LEGACY_DESKTOP_API_TIMEOUT
+@@ -483 +486,3 @@ export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfil
+-    timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : defaults.timeout,
++    timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout)
++      ? DESKTOP_SHELL && record.timeout === LEGACY_DESKTOP_API_TIMEOUT ? DEFAULT_API_TIMEOUT : record.timeout
++      : defaults.timeout,
+@@ -517 +522,3 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
+-    timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : DEFAULT_API_TIMEOUT,
++    timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout)
++      ? DESKTOP_SHELL && record.timeout === LEGACY_DESKTOP_API_TIMEOUT ? DEFAULT_API_TIMEOUT : record.timeout
++      : DEFAULT_API_TIMEOUT,
 diff --git a/src/main.tsx b/src/main.tsx
 index 43e065c..ac6c5ff 100644
 --- a/src/main.tsx

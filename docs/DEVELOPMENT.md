@@ -34,8 +34,9 @@ resulting `dist` directory and retain the upstream MIT license as
 The desktop patch keeps the upstream visual structure while code-splitting
 secondary tools, disabling Service Worker ownership inside QtWebEngine, and
 reducing only the full-screen blur and scale animations that trigger expensive
-page recomposition. Small translucent controls, shadows, and short modal motion
-remain enabled.
+page recomposition. It also carries the desktop clipboard/drop bridge and the
+longer 4K-friendly timeout defaults. Small translucent controls, shadows, and
+short modal motion remain enabled.
 
 ## Versioning
 

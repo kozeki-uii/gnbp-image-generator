@@ -1,25 +1,84 @@
+import base64
+import json
 import os
 import sys
 import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-from PySide6.QtCore import QSettings, QStandardPaths, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineScript
+from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QMimeDatabase, QSettings, QStandardPaths, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QImage, QKeySequence, QShortcut
+from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox
 
 from app_info import APP_TITLE
 
 
 DESKTOP_PORT = 47831
 DEFAULT_ZOOM = 1.25
+MAX_DESKTOP_IMAGE_BYTES = 64 * 1024 * 1024
+DESKTOP_IMAGES_EVENT = "gnbp-desktop-images"
+DESKTOP_DRAG_STATE_EVENT = "gnbp-desktop-drag-state"
 
 
 def get_resource_path(relative_path):
     base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(base_path, relative_path)
+
+
+def _image_file_to_data_url(path):
+    try:
+        if not os.path.isfile(path) or os.path.getsize(path) > MAX_DESKTOP_IMAGE_BYTES:
+            return None
+        mime_type = QMimeDatabase().mimeTypeForFile(path, QMimeDatabase.MatchContent).name()
+        if not mime_type.startswith("image/"):
+            return None
+        with open(path, "rb") as handle:
+            payload = base64.b64encode(handle.read()).decode("ascii")
+    except OSError:
+        return None
+    return f"data:{mime_type};base64,{payload}"
+
+
+def mime_data_has_images(mime_data):
+    if mime_data.hasImage():
+        return True
+    return any(
+        url.isLocalFile()
+        and QMimeDatabase().mimeTypeForFile(url.toLocalFile(), QMimeDatabase.MatchExtension).name().startswith("image/")
+        for url in mime_data.urls()
+    )
+
+
+def mime_data_to_image_data_urls(mime_data):
+    data_urls = []
+    for url in mime_data.urls():
+        if not url.isLocalFile():
+            continue
+        data_url = _image_file_to_data_url(url.toLocalFile())
+        if data_url:
+            data_urls.append(data_url)
+
+    if data_urls or not mime_data.hasImage():
+        return data_urls
+
+    image_data = mime_data.imageData()
+    if hasattr(image_data, "toImage"):
+        image = image_data.toImage()
+    elif isinstance(image_data, QImage):
+        image = image_data
+    else:
+        image = QImage(image_data)
+    if image.isNull():
+        return []
+
+    encoded = QByteArray()
+    buffer = QBuffer(encoded)
+    if not buffer.open(QIODevice.OpenModeFlag.WriteOnly) or not image.save(buffer, "PNG"):
+        return []
+    payload = base64.b64encode(bytes(encoded)).decode("ascii")
+    return [f"data:image/png;base64,{payload}"]
 
 
 class QuietStaticHandler(SimpleHTTPRequestHandler):
@@ -73,6 +132,65 @@ class DesktopWebPage(QWebEnginePage):
         page.deleteLater()
 
 
+class DesktopWebView(QWebEngineView):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self._desktop_drag_active = False
+
+    def _dispatch_desktop_event(self, event_name, detail):
+        script = (
+            f"window.dispatchEvent(new CustomEvent({json.dumps(event_name)}, "
+            f"{{detail: {json.dumps(detail)}}}));"
+        )
+        self.page().runJavaScript(script)
+
+    def _set_drag_active(self, active):
+        self._dispatch_desktop_event(DESKTOP_DRAG_STATE_EVENT, bool(active))
+
+    def paste_clipboard_images(self):
+        data_urls = mime_data_to_image_data_urls(QApplication.clipboard().mimeData())
+        if not data_urls:
+            return False
+        self._dispatch_desktop_event(DESKTOP_IMAGES_EVENT, data_urls)
+        return True
+
+    def keyPressEvent(self, event):
+        if event.matches(QKeySequence.StandardKey.Paste) and self.paste_clipboard_images():
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def dragEnterEvent(self, event):
+        if mime_data_has_images(event.mimeData()):
+            self._desktop_drag_active = True
+            self._set_drag_active(True)
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if self._desktop_drag_active:
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event):
+        self._desktop_drag_active = False
+        self._set_drag_active(False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        self._desktop_drag_active = False
+        self._set_drag_active(False)
+        data_urls = mime_data_to_image_data_urls(event.mimeData())
+        if data_urls:
+            self._dispatch_desktop_event(DESKTOP_IMAGES_EVENT, data_urls)
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
+
+
 class WebMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -112,9 +230,12 @@ class WebMainWindow(QMainWindow):
         profile.scripts().insert(desktop_runtime)
         self.web_profile = profile
 
-        self.web_view = QWebEngineView(self)
+        self.web_view = DesktopWebView(self)
         page = DesktopWebPage(profile, self.web_view)
         page.setBackgroundColor(QColor("#111827"))
+        page.settings().setAttribute(QWebEngineSettings.JavascriptCanAccessClipboard, True)
+        page.settings().setAttribute(QWebEngineSettings.JavascriptCanPaste, True)
+        page.settings().setAttribute(QWebEngineSettings.NavigateOnDropEnabled, False)
         self.web_view.setPage(page)
         self.desktop_settings = QSettings("GNBP", "ImageGenerator")
         saved_zoom = self.desktop_settings.value("web_zoom", DEFAULT_ZOOM, type=float)
